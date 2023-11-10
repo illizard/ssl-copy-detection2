@@ -244,5 +244,3 @@ If you find our codebase useful, please consider giving a star :star: and cite a
   year={2022}
 }
 ```
-# ssl-copy-detection2
-# ssl-copy-detection2

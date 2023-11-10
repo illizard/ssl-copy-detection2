@@ -19,8 +19,8 @@ from numpy import linalg
 import pandas as pd
 
 from lib import initialize  # noqa
-from lib.inference import Inference
-from sscd.train import DISCData
+from lib.inference_head_ab import Inference
+from sscd.train_ortho import DISCData
 from sscd.datasets.disc import DISCEvalDataset
 from sscd.lib.util import parse_bool
 
@@ -51,6 +51,10 @@ disc_parser.add_argument(
     help="Use a global set of KNN candidates, instead of k per query. Uses CPU KNN.",
 )
 disc_parser.add_argument("--metadata", help="Metadata column to put in the result CSV")
+
+# MODI FOR HEAD ABLATION
+disc_parser.add_argument("--block_idx", default=1, type=int)
+disc_parser.add_argument("--head_idx", default=1, type=int)
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -245,7 +249,7 @@ def main(args):
     dataset = DISCData.make_validation_dataset(
         args.disc_path,
         size=args.size,
-        # include_train = False, # true면 score norm 에러남
+        # include_train = False, # False면 score norm 에러남
         include_train=True,
         preserve_aspect_ratio=args.preserve_aspect_ratio,
     )

@@ -18,9 +18,12 @@ from .gem_pooling import GlobalGeMPool2d
 
 from sscd.models import mae_vit
 from sscd.models import dino_vit
-from sscd.models import dtop_vit
+from sscd.models import dtop_vit_384
+from sscd.models import dtop_vit_192
+from sscd.models import xcit
 
 import timm
+from timm.models import create_model
 
 class Implementation(enum.Enum):
     CLASSY_VISION = enum.auto()
@@ -43,24 +46,38 @@ class Backbone(enum.Enum):
 
     OFFL_VIT = ('vit_patch_16_base', 768, Implementation.OFFICIAL)     ##230831#    
     OFFL_VIT_TINY = ('vit_patch_16_tiny', 192, Implementation.OFFICIAL)     ##230831#    
+    OFFL_HYVIT_TINY = ('vit_tiny_r_s16_p8_224', 192, Implementation.OFFICIAL)
+
+    OFFL_FAST_TINY_T8 = ('fastvit_t8', 192, Implementation.OFFICIAL)
+    OFFL_FAST_TINY_T12 = ('fastvit_t12', 192, Implementation.OFFICIAL)
+    OFFL_FAST_TINY_SA12 = ('fastvit_sa12', 192, Implementation.OFFICIAL)
+
     OFFL_DINO = ('dino_patch_16_base', 768, Implementation.OFFICIAL)     ##230708##
     OFFL_MAE = ('mae_patch_16_base', 768, Implementation.OFFICIAL)  
     OFFL_MOBVIT = ('mobilevit_xxs', 192, Implementation.MOBILE)
-    MY_DTOP_VIT = ('dtop_vit_tiny', 192, Implementation.MY)  
-  
+    
+    MY_DTOP_VIT_192 = ('dtop_vit_tiny_192', 192, Implementation.MY)  
+    MY_DTOP_VIT_384 = ('dtop_vit_tiny_384', 384, Implementation.MY)  
+    MY_XCIT = ('xcit_retrievalv2_small_12_p16', 384, Implementation.MY)  
+
+    MY_ORTHO_VIT = ('vit_patch_16_tiny', 192, Implementation.MY)  
+    # MY_XCIT = ('vit_patch_16_small', 384, Implementation.MY)  
     # dino = ('dino_patch_16_base', 768, Implementation.OFFICIAL)     ##230708##
     
     def build(self, dims: int):
         impl = self.value[2]
+        
         # print(self.value) #('resnet50', 2048, <Implementation.CLASSY_VISION: 1>)
         if impl == Implementation.CLASSY_VISION:
             model = build_model({"name": self.value[0]})
             # Remove head exec wrapper, which we don't need, and breaks pickling
             # (needed for spawn dataloaders).
             return model.classy_model
+        
         if impl == Implementation.TORCHVISION:
             return self.value[0](num_classes=dims, zero_init_residual=True)
         # multigrain 230804
+        
         if impl == Implementation.TORCHVISION_ISC:
             model = resnet50(pretrained=False)
             st = torch.load("/hdd/wi/isc2021/models/multigrain_joint_3B_0.5.pth")
@@ -77,46 +94,74 @@ class Backbone(enum.Enum):
 
         if impl == Implementation.OFFICIAL: #### modi 0722 ###
             if self.value[0] == "vit_patch_16_base":
-                model = timm.create_model("vit_base_patch16_224.augreg_in1k", pretrained=False, num_classes=0)
-                return model            
+                model = timm.create_model("vit_base_patch16_224.augreg_in1k", pretrained=True, num_classes=0)
+                return model           
             elif self.value[0] == "vit_patch_16_tiny":
+                # model = timm.create_model("vit_tiny_patch16_224.augreg_in21k", pretrained=True, num_classes=0)
                 model = timm.create_model("vit_tiny_patch16_224.augreg_in21k", pretrained=True, num_classes=0)
                 return model            
-            elif self.value[0] == "dino_patch_16_base":
-                model = dino_vit.__dict__['vit_base'](patch_size=16, num_classes=0)
-                ckpt = torch.load("/hdd/wi/isc2021/models/dino_vitbase16_pretrain.pth", map_location=torch.device('cpu'))
-                # new_ckpt = OrderedDict(("backbone."+k, v) for k, v in ckpt.items())
-                # model.load_state_dict(ckpt, strict=True)
-                print(model)
-                print(f"===="*30)
-                print(f"current state is")
-                print(f"{ckpt.keys()}\n")
-                print(f"===="*30)
-                print(f"Model {self.value[0]} built.")
+            elif self.value[0] == "vit_tiny_r_s16_p8_224":
+                model = timm.create_model("vit_tiny_r_s16_p8_224", pretrained=True, num_classes=0)
                 return model
-            
-            elif self.value[0] == "mae_patch_16_base":
-                model = mae_vit.__dict__['vit_base_patch16'](num_classes=0, drop_path_rate=0.0) # global_pool=args.global_pool)
-                ckpt = torch.load("/hdd/wi/isc2021/models/mae_pretrain_vit_base.pth", map_location=torch.device('cpu'))
-                model.load_state_dict(ckpt['model'], strict=True)
-                print(f"===="*30)
-                print(f"current state is")
-                print(f"{ckpt['model'].keys()}\n")
-                print(f"===="*30)
-                print(f"Model {self.value[0]} built.")
+            elif self.value[0] == "fastvit_t8":
+                model = timm.create_model("fastvit_t8", pretrained=True, num_classes=0)
+                return model
+            elif self.value[0] == "fastvit_t12":
+                model = timm.create_model("fastvit_t12", pretrained=True, num_classes=0)
+                return model
+            elif self.value[0] == "fastvit_sa12":
+                model = timm.create_model("fastvit_sa12", pretrained=True, num_classes=0)
                 return model
 
-        if impl == Implementation.MOBILE:
-            model = timm.create_model("mobilevit_xxs", num_classes=0, pretrained=True)
-            return model
+            # elif self.value[0] == "dino_patch_16_base":
+            #     model = dino_vit.__dict__['vit_base'](patch_size=16, num_classes=0)
+            #     ckpt = torch.load("/hdd/wi/isc2021/models/dino_vitbase16_pretrain.pth", map_location=torch.device('cpu'))
+            #     # new_ckpt = OrderedDict(("backbone."+k, v) for k, v in ckpt.items())
+            #     # model.load_state_dict(ckpt, strict=True)
+            #     print(model)
+            #     print(f"===="*30)
+            #     print(f"current state is")
+            #     print(f"{ckpt.keys()}\sn")
+            #     print(f"===="*30)
+            #     print(f"Model {self.value[0]} built.")
+            #     return model
 
         if impl == Implementation.MY:
-            if self.value[0] == "dtop_vit_tiny":
-                model = dtop_vit.DeepTokenPooling().cuda()
-                # MY_DTOP_VIT = ('dtop_vit_tiny', 192, Implementation.MY)  
+            if self.value[0] == "dtop_vit_tiny_192":
+                model = dtop_vit_192.DeepTokenPooling().cuda()
+                return model
+            
+            if self.value[0] == "dtop_vit_tiny_384":
+                model = dtop_vit_384.DeepTokenPooling().cuda()
+                return model        
+            
+            # if self.value[0] == "xcit_retrievalv2_small_12_p16":
 
-            return model
-                
+  
+            #     model = create_model(
+            #         'xcit_tiny_12_p16_224',
+            #         num_classes=0,
+            #         drop_rate=0.0,
+            #         drop_path_rate=0.1,
+            #         drop_block_rate=None
+            #     )
+
+
+            #     # checkpoint = torch.load('/hdd/wi/sscd-copy-detection/ckpt/xcit_small_12_p16_224.pth', map_location='cpu')
+
+            #     # checkpoint_model = checkpoint['model']
+            #     # state_dict = model.state_dict()
+            #     # for k in ['head.weight', 'head.bias']:
+            #     #     if k in checkpoint_model and k in state_dict and checkpoint_model[k].shape != state_dict[k].shape:
+            #     #         print(f"Removing key {k} from pretrained checkpoint")
+            #     #         del checkpoint_model[k]
+
+            #     # model.load_state_dict(checkpoint_model, strict=False)
+            #     model.cuda()
+            #     print(model)
+            #     return model
+            
+             
         else:
             raise AssertionError("Unsupported OFFICIAL model: %s" % (self.value[0]))
         
@@ -125,14 +170,17 @@ class L2Norm(nn.Module):
     def forward(self, x):
         return F.normalize(x)
 
-
 class Model(nn.Module):
-    def __init__(self, backbone: str, dims: int, pool_param: float):
+    def __init__(self, backbone: str, dims: int, pool_param: float): # og
+    # def __init__(self, backbone: str, dims: int, pool_param: float, model_idx:int, token:str): # modi for mode
         super().__init__()
         self.backbone_type = Backbone[backbone] # self.backbone_type = <Backbone.CV_RESNET50>
                                                 #<Backbone.CV_RESNET50: ('resnet50', 2048, <Implementation.CLASSY_VISION: 1>)>
                                                 #Backbone <enum 'Backbone'> // 'CV_RESNET50'
-        print(f"self.backbone_type is {self.backbone_type}")
+        # MODI
+        print(f"backbone is {backbone}")
+        # self.model_idx = model_idx
+        self.dims = self.backbone_type.value[1]
         self.backbone = self.backbone_type.build(dims=dims)
         impl = self.backbone_type.value[2]
         if impl == Implementation.CLASSY_VISION:
@@ -161,70 +209,132 @@ class Model(nn.Module):
             #     GlobalGeMPool2d(pooling_param=3.0),
             #     L2Norm(),
             # )
-        # ValueError: not enough values to unpack (expected 4, got 2) 왜 이런 에러가 나는지 도대체 모르겟네
         ## MODIFIED 230724##
         elif impl == Implementation.OFFICIAL:
             if self.backbone_type.value[0] == "vit_patch_16_base":
                 self.embeddings = L2Norm() 
             elif self.backbone_type.value[0] == "vit_patch_16_tiny":
-                self.embeddings = L2Norm()    
-            elif self.backbone_type.value[0] == "dino_patch_16_base":
-                self.embeddings = L2Norm()    
-            elif self.backbone_type.value[0] == "mae_patch_16_base":
                 self.backbone.head_drop = nn.Identity()
+                # self.dropout = nn.Dropout(p=0.5)
+                # self.last_fc_layer = nn.Linear(self.dims*2, self.dims)  # 차원 축소 레이어 추가
+                # self.bn = nn.BatchNorm1d(self.dims)
+                # self.relu = nn.ReLU()
                 self.embeddings = L2Norm()
-            # cls token // patch embbdig 정하기            
+            elif self.backbone_type.value[0] == "vit_tiny_r_s16_p8_224":
+                self.embeddings = L2Norm()    
+            # elif self.backbone_type.value[0] == "fastvit_t8":
+            #     self.backbone.head_drop = nn.Identity()
+            #     self.pooling = nn.AdaptiveAvgPool2d(1)
+            #     self.fc_layer = nn.Linear(768, 192)
+            #     self.embeddings = L2Norm()
+            # elif self.backbone_type.value[0] == "fastvit_t12":
+            #     self.backbone.head_drop = nn.Identity()
+            #     self.pooling = nn.AdaptiveAvgPool2d(1)
+            #     self.fc_layer = nn.Linear(1024, 192)
+            #     self.embeddings = L2Norm()        
+            # elif self.backbone_type.value[0] == "fastvit_sa12":
+            #     self.backbone.head_drop = nn.Identity()
+            #     self.pooling = nn.AdaptiveAvgPool2d(1)
+            #     self.fc_layer = nn.Linear(1024, 192)
+            #     self.embeddings = L2Norm()    
+         
 
         elif impl == Implementation.MOBILE:
             self.embeddings = L2Norm()
         
         elif impl == Implementation.MY:
+            self.backbone.head_drop = nn.Identity()
+            self.dropout = nn.Dropout(p=0.5)
+            # self.last_fc_layer = nn.Linear(self.dims*2, self.dims)  # 차원 축소 레이어 추가
+            self.bn = nn.BatchNorm1d(self.dims)
+            self.relu = nn.ReLU()
             self.embeddings = L2Norm()
-            
-    def forward(self, x):
-        x = self.backbone(x)
-        # print(f"x.shape is {x.shape}")
 
+
+    def forward(self, x): # 배치당 처리 
+        ##################################################################
+        # # [model 3] vit OG &&last blk && cls+pat concat 
+        features = self.backbone.forward_features(x)
+        cls_x = features[:, 0]
+        pat_x = features[:, 1:].mean(dim=1)
+        x = torch.cat([cls_x, pat_x], dim=1)
+    
+        ##################################################################
+        # old code
+        ##################################################################
+
+        # # [model 1] vit OG && last blk && cls token
+        # if self.model_idx == 1:
+        #     x = self.backbone.get_global_feat(x)
+        
+        # # [model 2] vit OG && last blk && patch embedding
+        # elif self.model_idx == 2:
+        #     x = self.backbone.forward_features(x)[:, 1:].mean(dim=1)
+
+        # # [model 3] vit OG &&last blk && cls+pat concat 
+        # elif self.model_idx == 3:
+        #     features = self.backbone.forward_features(x)
+        #     cls_x = features[:, 0]
+        #     pat_x = features[:, 1:].mean(dim=1)
+        #     x = torch.cat([cls_x, pat_x], dim=1)
+
+        # # [model 4] vit OG &&last blk && cls+pat linear
+        # elif self.model_idx == 4:
+        #     features = self.backbone.forward_features(x)
+        #     cls_x = features[:, 0]
+        #     pat_x = features[:, 1:].mean(dim=1)
+        #     combined_features = torch.cat([cls_x, pat_x], dim=1)
+        #     x = self.dropout(combined_features)
+        #     x = self.last_fc_layer(x)
+        #     x = self.bn(x)
+        #     x = self.relu(x)
+        
+        # ##################################################################
+
+        # # [model 5] Dtop and global branch
+        # elif self.model_idx == 5:
+        #     x = self.backbone(x)[0]
+
+        # # [model 6] Dtop and local branch
+        # elif self.model_idx == 6:
+        #     x = self.backbone(x)[1]
+        
+        # # [model 7] Dtop and global && local branch concat 384dim
+        # elif self.model_idx == 7:
+        #     x = self.backbone(x)[2]
+            
+        # # [model 8] Dtop and global && local branch linear 192dim
+        # elif self.model_idx == 8:
+        #     x = self.backbone(x)[2]
+        #     x = self.dropout(x)
+        #     x = self.last_fc_layer(x)
+        #     x = self.bn(x)
+        #     x = self.relu(x)
+            
+        # ##################################################################
+        
+        # # [model 9] Dtop and global && local branch linear 384dim
+        # elif self.model_idx == 9:
+        #     x = self.backbone(x)
+        #     x = self.dropout(x)
+        #     x = self.last_fc_layer(x)
+        #     x = self.bn(x)
+        #     x = self.relu(x)
+        
+        # # [model 10] Dtop and global && local branch concat 384dim
+        # elif self.model_idx == 10:
+        #     x = self.backbone(x)[2]
+
+            
+            
         # return x
         return self.embeddings(x)
-        
-        
-        # print(x[0].shape) # DINO = x.shape = (1,768) //MAE = x.shape = tuple((1,768), (1,768))
-           
-        # if self.impl == Implementation.OFFICIAL:
-        # if self.backbone_type.value[0] == "dino_patch_16_base":
-        #     feats = self.backbone.get_intermediate_layers(x, n=1)[0].clone()  # size: (batch_size, num_patches + 1, embed_dim) | 마지막 블록에서 [CLS] 토큰과 패치 임베딩 리턴
-        #     cls_output_token = feats[:, 0, :] #  [CLS] token
-        
-        # ## patch_tokens = feats[:, 1:, :]
-        # ## GeM with exponent 4 for output patch tokens
-        # # b, h, w, d = x.shape[0], x.shape[-2] // self.backbone.patch_embed.patch_size, x.shape[-1] // self.backbone.patch_embed.patch_size, feats.shape[-1] # GeM pooling with exponent 4을 patch tokens에 적용하고, cls tokens와 연결
-        # # feats = feats[:, 1:, :].view(b, h, w, d)
-        # # feats = feats.clamp(min=1e-6).permute(0, 3, 1, 2)
-        # # feats = nn.functional.avg_pool2d(feats.pow(4), (h, w)).pow(1. / 4).view(b, -1)
-        
-        # elif self.backbone_type.value[0] == "mae_patch_16_base":
-        #     # print(f"x.shape is \t\t {x.shape}")
-        #     # cls_output_token = self.backbone.forward_features(x) # 모델 안에 이미 클래스 토큰만 나오게 돼있음
-        #     cls_output_token = self.backbone.forward_features(x)[0].clone() #패치임베딩까지 같이 꺼낼때 사용
-        # else:
-        #     raise AssertionError("Unsupported model: %s" % (self.backbone_type.value[0]))
-
-        # cls_tokens = self.embeddings(cls_output_token) # cls token만 나옴 #self.backbone(x).shape torch.Size([256, 768]) | shape is (256, 768)
-        # # patch_tokens = self.embeddings(feats)
-        
-        # # tokens = torch.cat([cls_tokens, patch_tokens], dim=1)  # size: (batch_size, 2 * embed_dim)
-        # return cls_tokens # cls 토큰과 + 패치 임베딩 반환            
-
-
-
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser):
         parser = parser.add_argument_group("Model")
         parser.add_argument(
-            "--backbone", default="TV_RESNET50", choices=[b.name for b in Backbone]
+            "--backbone", default="TV_RESNET50", choices=[b.name for b in Backbone]            
         )
         parser.add_argument("--dims", default=512, type=int)
         parser.add_argument("--pool_param", default=3, type=float)
-        # parser.add_argument("--feature", default='cls', type=str, choices=['cls', 'patch', 'cls_plus_patch'])
